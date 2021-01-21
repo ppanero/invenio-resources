@@ -16,6 +16,7 @@ Test to add:
 """
 
 import pytest
+from invenio_cache import current_cache
 from invenio_pidstore.errors import PIDDeletedError
 from invenio_search import current_search, current_search_client
 from marshmallow import ValidationError
@@ -70,3 +71,33 @@ def test_simple_flow(app, consumer, service, identity_simple, input_data):
     # - search
     res = service.search(identity_simple, q=f"id:{id_}", size=25, page=1)
     assert res.total == 0
+
+
+def test_read_all_cache(app, service, identity_simple, input_data):
+    # Create an items
+    item_one = service.create(identity_simple, input_data)
+    item_two = service.create(identity_simple, input_data)
+
+    records = service.read_all(identity_simple, "metadata.title", "Test")
+    assert records.total == 2
+
+    cached = current_cache.get("metadata.title-Test")
+    # FIXME: This is a problem because from cache is a dict
+    # From search is a ResultList. Otherwise some sort of
+    # from_dict method needs to be implemented in ResultsList (not trivial)
+    assert cached['hits']['total'] == 2
+
+    # Clean cache for future tests
+    cached = current_cache.delete("metadata.title-Test")
+
+
+def test_read_all_no_cache(app, service, identity_simple, input_data):
+    # Create an items
+    item_one = service.create(identity_simple, input_data)
+    item_two = service.create(identity_simple, input_data)
+
+    records = service.read_all(identity_simple, "metadata.title", "Test")
+    assert records.total == 2
+
+    cached = current_cache.get("metadata.title-Test")
+    assert not cached

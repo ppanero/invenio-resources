@@ -10,6 +10,7 @@
 
 """Record Service API."""
 
+from invenio_cache import current_cache
 from invenio_db import db
 from invenio_records_permissions.api import permission_filter
 from invenio_search import current_search_client
@@ -182,6 +183,30 @@ class RecordService(Service):
             links_config=links_config
         )
 
+    def read_all(self, identity, key, value, links_config=None,
+                 cache=True, **kwargs):
+        """Search for records matching the querystring."""
+        query = {"q": f"{key}:{value}"}
+        cache_key = f"{key}-{value}"
+        results = current_cache.get(cache_key)
+
+        if not results:
+            # NOTE: preference is None, order does not matter
+            search_result = self._search(
+                'search', identity, query, None, **kwargs).execute()
+
+            results = self.result_list(self, identity, search_result,
+                query, links_config=links_config)
+
+            if cache:
+                # NOTE: ES DSL Response is not pickable
+                current_cache.set(cache_key, results.to_dict())
+
+        # else:
+        #     results = self.result_list.from_dict(results)
+
+        return results
+
     def reindex(self, identity, params=None, es_preference=None, **kwargs):
         """Reindex records matching the query parameters."""
         # Prepare and execute the search as scan()
@@ -264,6 +289,18 @@ class RecordService(Service):
             record,
             links_config=links_config
         )
+
+    def read_many(self, identity, ids, links_config=None, **kwargs):
+        """Search for records matching the ids."""
+        # NOTE: using ES multi get is not feasible since in most of the cases
+        # there is no access (on user or UI side) to the UUIDs, just the PIDs
+        records = []
+        for id_ in ids:
+            record = self.read(id_, identity, links_config)
+            if record:
+                records.append(record)
+
+        return records
 
     def update(self, id_, identity, data, links_config=None,
                revision_id=None):
